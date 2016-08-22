@@ -15,7 +15,7 @@ def get_ridge_features(X_train, y_train, to_predict):
     clf, _ = RidgeClassifier(tol=1e-2, solver="sag"), "Ridge Classifier"
     clf.fit(X_train, y_train)
     pred = clf.predict(to_predict)
-    return pred - 1
+    return (pred - 1) * 0.01
 
 
 def make_features(X_train, X_test, y_train, language):

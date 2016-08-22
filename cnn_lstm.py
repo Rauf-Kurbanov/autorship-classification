@@ -12,8 +12,6 @@ from keras.layers import Dense, Dropout, Activation
 from keras.layers import Embedding
 from keras.layers import LSTM, GRU, SimpleRNN
 from keras.layers import Convolution1D, MaxPooling1D
-from keras.datasets import imdb
-
 
 # Embedding
 max_features = 20000
@@ -37,19 +35,6 @@ Note:
 batch_size is highly sensitive.
 Only 2 epochs are needed as the dataset is very small.
 '''
-
-#########################################################################################
-# print('Loading data...')
-# (X_train, y_train), (X_test, y_test) = imdb.load_data(nb_words=max_features)
-# print(len(X_train), 'train sequences')
-# print(len(X_test), 'test sequences')
-#
-# print('Pad sequences (samples x time)')
-# X_train = sequence.pad_sequences(X_train, maxlen=maxlen)
-# X_test = sequence.pad_sequences(X_test, maxlen=maxlen)
-# print('X_train shape:', X_train.shape)
-# print('X_test shape:', X_test.shape)
-#########################################################################################
 
 data_dir = "/home/rauf/Programs/shpilman/data"
 aut_pair = "perumov-vs-lukjarenko"

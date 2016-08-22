@@ -16,11 +16,6 @@ def tile_punct_features(tile):
     return feature_df.sum() / len(words)
 
 
-def letter_features(name):
-    name = name.lower()
-    return Counter(name)
-
-
 def tile_letter_features(tile, language):
     lang_to_alph = {"RUS": "абвгдеёжзийклмнопрстуфхцчшщъыьэюя",
                     "ENG": "abcdefghijklmnopqrstuvwxyz"}
@@ -30,7 +25,7 @@ def tile_letter_features(tile, language):
     words = tile.split()
 
     tile_counter = Counter()
-    for c in (letter_features(word) for word in words):
+    for c in (Counter(word.lower()) for word in words):
         tile_counter.update(c)
 
     return {k: tile_counter[k] / len(words) for k in alphabet}
