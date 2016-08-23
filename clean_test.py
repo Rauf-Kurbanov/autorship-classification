@@ -1,5 +1,7 @@
 import io
 from time import time
+
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_extraction.text import TfidfTransformer
 from sklearn.feature_extraction.text import HashingVectorizer
 import numpy as np
@@ -26,20 +28,26 @@ from sklearn.pipeline import make_pipeline
 
 import os
 import random
+import itertools as itt
+import pickle
+
+import xgboost as xgb
 
 
-def merge_by(s, num_to_merge=2):
-    # num_to_merge = 2
-    new_s = []
-    for i in range(0, len(s) - len(s) % num_to_merge, num_to_merge):
-        ss = s[i:i+num_to_merge]
-        ss = ss[0] + ss[1]
-        new_s.append(ss)
-    return new_s
+def proportion(pred):
+    na, nb = np.histogram(pred, bins=2)[0]
+    return na / (na + nb), nb / (na + nb)
 
 
-def prepare_training_set(filename1, filename2, num_to_merge=2):
-    print ("Opening files:\n%s\n%s" % (filename1, filename2))
+def build_tiles(text, nwords=10):
+    ll = [s.strip().split() for s in text.splitlines()]
+    words = list(itt.chain(*ll))
+    word_lists = [words[i:i+nwords] for i, _ in enumerate(words[:-(nwords-1)])]
+    return [" ".join(wl) for wl in word_lists]
+
+
+def prepare_training_set(filename1, filename2):
+    print("Opening files:\n%s\n%s" % (filename1, filename2))
     with io.open(filename1) as f1, \
             io.open(filename2) as f2:
         text1 = f1.read()
@@ -49,17 +57,11 @@ def prepare_training_set(filename1, filename2, num_to_merge=2):
     print("Size of the second text = %d" % len(text2))
 
     t0 = time()
-    tiles1 = text1.split("\n")
-    tiles1 = [t for t in tiles1 if len(t) > 0]
-    tiles1 = merge_by(tiles1, num_to_merge)
-
+    tiles1 = build_tiles(text1)
     print("broke text1 in tiles in %fs" % (time() - t0))
 
     t1 = time()
-    tiles2 = text2.split("\n")
-    tiles2 = [t for t in tiles2 if len(t) > 0]
-    tiles2 = merge_by(tiles2, num_to_merge)
-
+    tiles2 = build_tiles(text2)
     print("broke text2 in tiles in"
           " %fs" % (time() - t1))
 
@@ -74,10 +76,6 @@ def prepare_training_set(filename1, filename2, num_to_merge=2):
     print("Cropped number of samples = %d" % len(tiles1))
 
     tiles = tiles1 + tiles2
-    # for i in range(10):               ###
-    #     ind = random.randint(0, len(tiles) - 1)
-    #     print(tiles[ind], end="\n----------------------------------\n")
-
     labels1 = np.array([1 for _ in range(len(tiles1))])
     labels2 = np.array([2 for _ in range(len(tiles2))])
     labels = np.append(labels1, labels2)
@@ -90,17 +88,19 @@ def prepare_training_set(filename1, filename2, num_to_merge=2):
     return tiles, labels
 
 
-def vectorise_dataset(X_train, x_test, y_train, select_chi2=10000):
+def vectorise_dataset(X_train, x_test, y_train, select_chi2=1000):
     n_features = 2 ** 16
+    # n_features = 1000
 
     hasher = HashingVectorizer(stop_words='english',
                                non_negative=True,
                                n_features=n_features)
 
-    vectorizer = make_pipeline(hasher, TfidfTransformer())
+    vectoriser = make_pipeline(hasher, TfidfTransformer())
+    # vectoriser = TfidfTransformer()
 
-    X_train = vectorizer.fit_transform(X_train)
-    x_test = vectorizer.transform(x_test)
+    X_train = vectoriser.fit_transform(X_train)
+    x_test = vectoriser.transform(x_test)
 
     print("Extracting %d best features by a chi-squared test" % select_chi2)
     t0 = time()
@@ -114,6 +114,8 @@ def vectorise_dataset(X_train, x_test, y_train, select_chi2=10000):
 
 # Benchmark classifiers
 def benchmark(clf, X_train, y_train, X_test, y_test):
+    res = []
+
     print('_' * 80)
     print("Training: ")
     print(clf)
@@ -123,25 +125,57 @@ def benchmark(clf, X_train, y_train, X_test, y_test):
     print("train time: %0.3fs" % train_time)
 
     t0 = time()
-    pred = clf.predict(X_test)
+    pred = clf.predict(X_train)
     test_time = time() - t0
     print("test time:  %0.3fs" % test_time)
 
-    score = metrics.accuracy_score(y_test, pred)
-    print("accuracy:   %0.3f" % score)
+    score = metrics.accuracy_score(y_train, pred)
+    print("accuracy on train:   %0.3f" % score)
 
     if hasattr(clf, 'coef_'):
         print("dimensionality: %d" % clf.coef_.shape[1])
         print("density: %f" % density(clf.coef_))
 
-    print("classification report:")
-    print(metrics.classification_report(y_test, pred))
+    print("classification report for train:")
+    print(metrics.classification_report(y_train, pred))
+
+    print("Classes proportion on train: {}".format(proportion(pred)))
 
     print()
 
-    clf_descr = str(clf).split('(')[0]
 
-    return clf_descr, score, train_time, test_time
+
+    # clf_descr = "TRAIN " + str(clf).split('(')[0]
+    train_score = score
+    # res.append((clf_descr, score, train_time, test_time))
+
+    # TODO eliminate code duplicate
+    t0 = time()
+    pred = clf.predict(X_test)
+    test_time = time() - t0
+    print("test time:  %0.3fs" % test_time)
+
+    score = metrics.accuracy_score(y_test, pred)
+    print("accuracy on test:   %0.3f" % score)
+
+    if hasattr(clf, 'coef_'):
+        print("dimensionality: %d" % clf.coef_.shape[1])
+        print("density: %f" % density(clf.coef_))
+
+    print("classification report for test:")
+    print(metrics.classification_report(y_test, pred))
+    print("Classes proportion on test: {}".format(proportion(pred)))
+
+    print()
+
+
+    clf_descr = str(clf).split('(')[0]
+    test_score = score
+    # res.append((clf_descr, score, train_time, test_time))
+
+    # return clf_descr, score, train_time, test_time
+    return clf_descr, train_score, test_score
+    # return res
 
 
 def train_all_models(X_train, y_train, X_test, y_test):
@@ -150,27 +184,34 @@ def train_all_models(X_train, y_train, X_test, y_test):
     piped = Pipeline([
         ('feature_selection', LinearSVC(penalty="l1", dual=False, tol=1e-3))
         , ('classification', LinearSVC())])
-    for clf, name in (
-            (RidgeClassifier(tol=1e-2, solver="sag"), "Ridge Classifier")
-            , (Perceptron(n_iter=50), "Perceptron")
-            , (PassiveAggressiveClassifier(n_iter=50), "Passive-Aggressive")
-            # , (KNeighborsClassifier(n_neighbors=10), "kNN")
-            , (SGDClassifier(alpha=.0001, n_iter=50, penalty="elasticnet"), "Elastic-Net penalty")
-            , (NearestCentroid(), "NearestCentroid (aka Rocchio classifier)")
-            , (MultinomialNB(alpha=.01), "MultinomialNB")
-            , (BernoulliNB(alpha=.01), "BernoulliNB")
-            , (piped, "LinearSVC with L1-based feature selection")):
-        #         (RandomForestClassifier(n_estimators=100), "Random forest")):
+    for clf, name in [(RandomForestClassifier(n_estimators=300, max_depth=5, max_features=15), "Random forest")]:
+    # for clf, name in (
+    #         (RidgeClassifier(tol=1e-2, solver="sag", alpha=1000), "Ridge Classifier")
+    #         , (Perceptron(n_iter=50, penalty='l2', alpha=0.001), "Perceptron")
+            # , (PassiveAggressiveClassifier(n_iter=50, C=0.0001), "Passive-Aggressive")
+            # # , (KNeighborsClassifier(n_neighbors=10), "kNN")
+            # , (SGDClassifier(alpha=.0001, n_iter=50, penalty="elasticnet"), "Elastic-Net penalty")
+            # , (NearestCentroid(), "NearestCentroid (aka Rocchio classifier)")
+            # , (MultinomialNB(alpha=.01), "MultinomialNB")
+            # , (BernoulliNB(alpha=.01), "BernoulliNB")
+            # , ((xgb.XGBClassifier(max_depth=3, n_estimators=300, learning_rate=0.05)), "XGBoost")
+            # , (RandomForestClassifier(n_estimators=300, max_depth=3, max_features=15), "Random forest")
+            # , (piped, "LinearSVC with L1-based feature selection")
+    # ):
+
         print('=' * 80)
         print(name)
         results.append(benchmark(clf, X_train, y_train, X_test, y_test))
+        # results.extend(benchmark(clf, X_train, y_train, X_test, y_test))
 
-    for penalty in ["l2", "l1"]:
-        for clf in (LinearSVC(penalty=penalty, dual=False, tol=1e-3)
-                    , SGDClassifier(alpha=.0001, n_iter=50, penalty=penalty)):
-            print('=' * 80)
-            print("%s penalty" % penalty.upper())
-            results.append(benchmark(clf, X_train, y_train, X_test, y_test))
+    ## for penalty in ["l2", "l1"]:
+    # for penalty in ["l2"]:
+    #     for clf in (LinearSVC(penalty=penalty, dual=False, tol=1e-3)
+    #                 , SGDClassifier(alpha=.0001, n_iter=50, penalty=penalty)):
+    #         print('=' * 80)
+    #         print("%s penalty" % penalty.upper())
+    #         results.append(benchmark(clf, X_train, y_train, X_test, y_test))
+    #         # results.extend(benchmark(clf, X_train, y_train, X_test, y_test))
 
     return results
 
@@ -179,20 +220,25 @@ def plot_results(results):
     # %matplotlib inline
     indices = np.arange(len(results))
 
-    results = [[x[i] for x in results] for i in range(4)]
+    # results = [[x[i] for x in results] for i in range(4)]
+    results = [[x[i] for x in results] for i in range(3)]
 
-    clf_names, score, training_time, test_time = results
-    training_time = np.array(training_time) / np.max(training_time)
-    test_time = np.array(test_time) / np.max(test_time)
+    # clf_names, score, training_time, test_time = results
+    # clf_names, score, training_time, _ = results
+    clf_names, train_score, test_score = results
 
-    plt.figure(figsize=(12, 8))
+    # training_time = np.array(training_time) / np.max(training_time)
+    # test_time = np.array(test_time) / np.max(test_time)
+
+    plt.figure(figsize=(20, 8))
     plt.title("Score")
-    plt.barh(indices, score, .2, label="score", color='r')
-    plt.barh(indices + .3, training_time, .2, label="training time", color='g')
-    plt.barh(indices + .6, test_time, .2, label="test time", color='b')
+    plt.barh(indices, train_score, .2, label="training score", color='r')
+    plt.barh(indices + .3, test_score, .2, label="test score", color='b')
+    # plt.barh(indices + .6, test_time, .2, label="test time", color='b')
     plt.yticks(())
     plt.legend(loc='best')
     plt.subplots_adjust(left=.25)
+    # plt.subplots_adjust()
     plt.subplots_adjust(top=.95)
     plt.subplots_adjust(bottom=.05)
 
@@ -203,24 +249,42 @@ def plot_results(results):
 
 
 def main():
-    random.seed(42)
+    # random.seed(42)
 
-    data_dir = "/home/rauf/Programs/shpilman/data"
-    aut_pair = "perumov-vs-lukjarenko"
-    # aut_pair = "asimov-vs-silverberg"
+    # data_dir = "/home/rauf/Programs/shpilman/data"
+    # aut_pair = "perumov-vs-lukjarenko"
+    # # aut_pair = "asimov-vs-silverberg"
+    #
+    # train_fn1 = os.path.join(data_dir, aut_pair, "class1_training/class1_training.txt")
+    # train_fn2 = os.path.join(data_dir, aut_pair, "class2_training/class2_training.txt")
+    # X_train, y_train = prepare_training_set(train_fn1, train_fn2)
+    #
+    # test_fn1 = os.path.join(data_dir, aut_pair, "class1_test/class1_test.txt")
+    # test_fn2 = os.path.join(data_dir, aut_pair, "class2_test/class2_test.txt")
+    #
+    # select_chi2 = 10000
+    # X_test, y_test = prepare_training_set(test_fn1, test_fn2)
+    # X_train, X_test = vectorise_dataset(X_train, X_test, y_train, select_chi2)
+    #
+    # pickle.dump(X_train, open("serialized/X_train.p", "wb"))
+    # pickle.dump(y_train, open("serialized/y_train.p", "wb"))
+    # pickle.dump(X_test, open("serialized/X_test.p", "wb"))
+    # pickle.dump(y_test, open("serialized/y_test.p", "wb"))
 
-    train_fn1 = os.path.join(data_dir, aut_pair, "class1_training/class1_training.txt")
-    train_fn2 = os.path.join(data_dir, aut_pair, "class2_training/class2_training.txt")
-    X_train, y_train = prepare_training_set(train_fn1, train_fn2)
+    if all(map(os.path.isfile, ["serialized/X_train.p", "serialized/y_train.p",
+                            "serialized/X_test.p", "serialized/y_test.p"])):
+        X_train = pickle.load(open("serialized/X_train.p", "rb"))
+        y_train = pickle.load(open("serialized/y_train.p", "rb"))
+        X_test = pickle.load(open("serialized/X_test.p", "rb"))
+        y_test = pickle.load(open("serialized/y_test.p", "rb"))
+        print("X_train.shape = {}".format(X_train.shape))
+    else:
+        print("Serialized files not found")
+        return
 
-    test_fn1 = os.path.join(data_dir, aut_pair, "class1_test/class1_test.txt")
-    test_fn2 = os.path.join(data_dir, aut_pair, "class2_test/class2_test.txt")
+    dlen = X_train.shape[0] // 10
+    # X_train, y_train = X_train[:dlen, :], y_train[:dlen]
 
-    X_test, y_test = prepare_training_set(test_fn1, test_fn2)
-    X_train, X_test = vectorise_dataset(X_train, X_test, y_train)
-    # print(type(X_train))
-
-    # print(X_train[0])
     results = train_all_models(X_train, y_train, X_test, y_test)
     plot_results(results)
 
