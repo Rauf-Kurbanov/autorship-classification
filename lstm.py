@@ -1,7 +1,7 @@
 import os
 import numpy as np
 
-from clean_test import prepare_training_set, vectorise_dataset, proportion
+from clean_test import prepare_training_set, vectorise_dataset, proportion, deseralize_dataset
 
 from keras.models import Sequential
 from keras.layers import Dense, Dropout, Activation
@@ -58,18 +58,34 @@ def main():
     X_test, y_test = prepare_training_set(test_fn1, test_fn2)
     X_train, X_test = vectorise_dataset(X_train, X_test, y_train, select_chi2=inp_layer)
     #
-    X_train = X_train.toarray()
-    y_train = np.asarray(y_train)
+    # X_train, y_train, X_test, y_test = deseralize_dataset()
 
     # Temporary data subsampling
-    dlen = 10000
+    dlen = X_train.shape[0] // 1000
     X_train, y_train = X_train[:dlen, :], y_train[:dlen]
+    print("X_train.shape = {}".format(X_train.shape))
 
+    tlen = X_test.shape[0] // 10
+    X_test, y_test= X_test[:dlen, :], y_test[:dlen]
+    print("X_test.shape = {}".format(X_train.shape))
     X_test = X_test.toarray()
     y_test = np.asarray(y_test)
 
-    model = lstm_model(inp_layer)
-    model.fit(X_train, y_train, batch_size=batch_size, nb_epoch=nb_epoch)
+    # model = lstm_model(inp_layer)
+    model = simple_model(inp_layer)
+    # model.fit(X_train, y_train, batch_size=batch_size, nb_epoch=nb_epoch)
+
+    #TODO debug generator
+    def batch_gen(batch_size, dlen):
+        for i in range(0, dlen, batch_size):
+            yield (X_train[i:i+batch_size, :].toarray(), np.asarray(y_train[i:i+batch_size]))
+
+    model.fit_generator(batch_gen(batch_size, dlen),
+                        nb_epoch=nb_epoch,
+                        validation_data=(X_test, y_test),
+                        samples_per_epoch=dlen)
+    model.save("serialized/lstm.keras")
+
 
     score, acc = model.evaluate(X_train, y_train, batch_size=batch_size)
     print('Training score:', score)
