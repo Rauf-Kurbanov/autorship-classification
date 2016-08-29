@@ -15,7 +15,7 @@ class FeatureLevel(Enum):
 
 
 class Feature:
-    def __init__(self, name, feature_level, extract, combine=None, *args, **kwargs):
+    def __init__(self, name, feature_level, extract, combine=None):
         self.name = name
         self.feature_level = feature_level
         self.extract = extract
@@ -44,24 +44,24 @@ class FeatureSet:
 
         self._n_features = len(features)
 
-    def fit(self, *args, **kwargs):
+    def fit(self, X_train=None, y_train=None):
         fwf = self._super_words_feature()
         self._features[FeatureLevel.tile].append(fwf)
         self._n_features -= len(self._features[FeatureLevel.word]) - 1
 
-    def transform(self, X, *args, **kwargs):
-        return np.array([self.transform_tile(x) for x in X])
+    def transform(self, X_train=None, y_train=None):
+        return np.array([self._transform_tile(x) for x in X_train])
 
-    def fit_transform(self, X, *args, **kwargs):
+    def fit_transform(self, X_train=None, y_train=None):
         self.fit()
-        return self.transform(X)
-
-    def transform_tile(self, tile):
-        return list(flatten(itt.chain(f.extract(tile) for f in self._features[FeatureLevel.tile])))
+        return self.transform(X_train, y_train)
 
     def add_feature(self, feature):
         self._features[feature.feature_level].append(feature)
         self._n_features += 1
+
+    def _transform_tile(self, tile):
+        return list(flatten(itt.chain(f.extract(tile) for f in self._features[FeatureLevel.tile])))
 
     def _super_words_feature(self):
         word_features = self._features[FeatureLevel.word]
@@ -95,46 +95,19 @@ def feature(level, combine=None):
     return wrapper
 
 
-class Encoder:
+def word_feature(combine=None):
+    def wrapper(func):
+        name = func.__name__
+        return Feature(name, FeatureLevel.word, func, combine)
 
-    def __init__(self, feature_set, words_per_tile=100):
-        self._feature_set = feature_set
-        self._feature_set.fit()
-        self._words_per_tile = words_per_tile
+    return wrapper
 
-    def fit(self):
-        pass
 
-    def transform(self, text):
-        tiles = self.build_tiles(text, self._words_per_tile)
+def concat_encodings(x, y):
+    if isinstance(x, csr_matrix) or isinstance(y, csr_matrix):
+        return scipy.sparse.hstack((x, y))
 
-        trans_by_tiles = np.array(self._feature_set.transform_tile(tile) for tile in tiles)
-        trans_by_text = self._feature_set.transform_text(text)
-
-        transfomed = trans_by_text
-        transfomed.append(trans_by_tiles)
-        encoded = reduce(self.concat_encodings, transfomed)
-
-        return encoded
-
-    def fit_transform(self, text):
-        self.fit()
-        return self.transform(text)
-
-    @staticmethod
-    def build_tiles(text, nwords):
-        ll = (s.strip().split() for s in text.splitlines())
-        words = list(itt.chain(*ll))
-
-        word_lists = (words[i:i + nwords] for i, _ in enumerate(words[:-(nwords - 1)]))
-        return (" ".join(wl) for wl in word_lists)
-
-    @staticmethod
-    def concat_encodings(x, y):
-        if isinstance(x, csr_matrix) or isinstance(y, csr_matrix):
-            return scipy.sparse.hstack((x, y))
-
-        return np.hstack((x, y))
+    return np.hstack((x, y))
 
 
 def main():

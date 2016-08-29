@@ -8,7 +8,7 @@ from sklearn.feature_extraction.text import HashingVectorizer, TfidfTransformer
 from sklearn.pipeline import make_pipeline
 from sklearn.feature_selection import SelectKBest, chi2
 
-from feature_encoder import feature, FeatureLevel, Feature
+from feature_encoder import feature, FeatureLevel, Feature, FeatureSet, word_feature
 
 
 def get_words(text):
@@ -26,10 +26,16 @@ def punct_features(tokens, i):
 @feature(FeatureLevel.tile)
 def tile_punct_features(tile):
     words = list(get_words(tile))
+    assert(True)
     feature_dict1 = [punct_features(words, i) for i in range(len(words))]
 
     feature_df = pd.DataFrame(feature_dict1)
     return np.array(feature_df.sum() / len(words))
+
+
+@word_feature(combine=lambda x, y: x + y)
+def word_length(word):
+    return len(word)
 
 
 @feature(FeatureLevel.tile)
@@ -48,16 +54,33 @@ def tile_letter_features(language, tile):
     return [tile_counter[k] / len(words) for k in alphabet]
 
 
-def bag_of_words(X_train, X_test, y_train, select_chi2=1000):
-    n_features = 2 ** 16
+class LettersFeature(Feature):
+    def __init__(self, language):
+        self._language = language
+        self.feature_level = FeatureLevel.tile
 
-    hasher = HashingVectorizer(stop_words='english',
-                               non_negative=True,
-                               n_features=n_features)
+    def extract(self, tile):
+        lang_to_alph = {"RUS": "абвгдеёжзийклмнопрстуфхцчшщъыьэюя",
+                        "ENG": "abcdefghijklmnopqrstuvwxyz"}
+        alphabet = lang_to_alph[self._language]
+        tile = tile.lower()
+        words = tile.split()
 
-    vectoriser = make_pipeline(hasher, TfidfTransformer(), SelectKBest(chi2, k=select_chi2))
+        tile_counter = Counter()
+        for c in (Counter(word.lower()) for word in words):
+            tile_counter.update(c)
 
-    X_train = vectoriser.fit_transform(X_train, y_train)
-    X_test = vectoriser.transform(X_test)
+        return [tile_counter[k] / len(words) for k in alphabet]
 
-    return X_train, X_test
+
+class BagOfWords(FeatureSet):
+    def __init__(self, select_chi2=1000):
+        n_features = 2 ** 16
+        hasher = HashingVectorizer(stop_words='english',
+                                   non_negative=True,
+                                   n_features=n_features)
+
+        self._vectoriser = make_pipeline(hasher, TfidfTransformer(), SelectKBest(chi2, k=select_chi2))
+        self.fit = self._vectoriser.fit
+        self.transform = self._vectoriser.transform
+        self.fit_transform = self._vectoriser.fit_transform

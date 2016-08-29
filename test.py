@@ -93,7 +93,7 @@ def train_all_models(X_train, y_train, X_test, y_test):
             , (NearestCentroid(), "NearestCentroid (aka Rocchio classifier)")
             , (MultinomialNB(alpha=.01), "MultinomialNB")
             , (BernoulliNB(alpha=.01), "BernoulliNB")
-            , ((xgb.XGBClassifier(max_depth=5, n_estimators=50, learning_rate=0.02)), "XGBoost")
+            # , ((xgb.XGBClassifier(max_depth=5, n_estimators=50, learning_rate=0.02)), "XGBoost")
             # , (RandomForestClassifier(n_estimators=50, max_depth=3, max_features=20), "Random forest")
             , (piped, "LinearSVC with L1-based feature selection")
             , (LinearSVC(penalty="l2", dual=False, tol=1e-3), "LinearSVC with l2 penalty")
@@ -139,7 +139,7 @@ def main():
     words_per_tile = 100
     vectorised = True
     force = False
-    shrink_train = 10
+    shrink_train = 2
     shrink_test = 3
 
     suffix = "{}_nf={}_wpt={}_vec={}_shTr={}_shTst={}".format(aut_pair, nfeatures, words_per_tile, vectorised,

@@ -7,7 +7,7 @@ import pickle
 from time import time
 from random import shuffle
 
-from feature_engineering import bag_of_words
+from feature_engineering import bag_of_words, BagOfWords
 
 
 def build_tiles(text, nwords):
@@ -77,9 +77,10 @@ def seralize_dataset(data_dir, aut_pair, nfeatures, suffix, vectorised=True, wor
     test_fn2 = os.path.join(data_dir, aut_pair, "class2_test/class2_test.txt")
     X_test, y_test = break_on_tiles(test_fn1, test_fn2, words_per_tile, shrink=shrink_test)
 
-    # TODO
     if vectorised:
-        X_train, X_test = bag_of_words(X_train, X_test, y_train, nfeatures)
+        bow = BagOfWords(nfeatures)
+        X_train = bow.fit_transform(X_train, y_train)
+        X_test = bow.transform(X_test)
 
     pickle.dump(X_train, open("serialized/X_train" + suffix + ".p", "wb"))
     pickle.dump(y_train, open("serialized/y_train" + suffix + ".p", "wb"))
