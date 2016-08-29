@@ -4,6 +4,8 @@ from enum import Enum
 from functools import reduce
 import scipy.sparse
 from scipy.sparse import csr_matrix
+from collections import defaultdict
+import collections
 
 
 class FeatureLevel(Enum):
@@ -13,7 +15,7 @@ class FeatureLevel(Enum):
 
 
 class Feature:
-    def __init__(self, name, feature_level, extract, combine=None):
+    def __init__(self, name, feature_level, extract, combine=None, *args, **kwargs):
         self.name = name
         self.feature_level = feature_level
         self.extract = extract
@@ -23,9 +25,18 @@ class Feature:
         return self.extract(*args, **kwargs)
 
 
+def flatten(l):
+    for el in l:
+        if isinstance(el, collections.Iterable):
+            for sub in flatten(el):
+                yield sub
+        else:
+            yield el
+
+
 class FeatureSet:
     _n_features = 0
-    _features = {}
+    _features = defaultdict(list)
 
     def __init__(self, features):
         for f in features:
@@ -33,16 +44,20 @@ class FeatureSet:
 
         self._n_features = len(features)
 
-    def compile(self):
+    def fit(self, *args, **kwargs):
         fwf = self._super_words_feature()
         self._features[FeatureLevel.tile].append(fwf)
         self._n_features -= len(self._features[FeatureLevel.word]) - 1
 
-    def transform_tile(self, tile):
-        return [f.extract(tile) for f in self._features[FeatureLevel.tile]]
+    def transform(self, X, *args, **kwargs):
+        return np.array([self.transform_tile(x) for x in X])
 
-    def transform_text(self, text):
-        return [f.extract(text) for f in self._features[FeatureLevel.text]]
+    def fit_transform(self, X, *args, **kwargs):
+        self.fit()
+        return self.transform(X)
+
+    def transform_tile(self, tile):
+        return list(flatten(itt.chain(f.extract(tile) for f in self._features[FeatureLevel.tile])))
 
     def add_feature(self, feature):
         self._features[feature.feature_level].append(feature)
@@ -53,10 +68,10 @@ class FeatureSet:
         combines = [wf.combine for wf in word_features]
 
         def combine(resA, resB):
-            return (c(ra, rb) for ra, rb, c in zip(resA, resB, combines))
+            return [c(ra, rb) for ra, rb, c in zip(resA, resB, combines)]
 
         def extract(word):
-            return (wf(word) for wf in word_features)
+            return [wf(word) for wf in word_features]
 
         return Feature("super_word_feature", FeatureLevel.word, extract, combine)
 
@@ -84,10 +99,13 @@ class Encoder:
 
     def __init__(self, feature_set, words_per_tile=100):
         self._feature_set = feature_set
-        self._feature_set.compile()
+        self._feature_set.fit()
         self._words_per_tile = words_per_tile
 
-    def encode(self, text):
+    def fit(self):
+        pass
+
+    def transform(self, text):
         tiles = self.build_tiles(text, self._words_per_tile)
 
         trans_by_tiles = np.array(self._feature_set.transform_tile(tile) for tile in tiles)
@@ -98,6 +116,10 @@ class Encoder:
         encoded = reduce(self.concat_encodings, transfomed)
 
         return encoded
+
+    def fit_transform(self, text):
+        self.fit()
+        return self.transform(text)
 
     @staticmethod
     def build_tiles(text, nwords):
