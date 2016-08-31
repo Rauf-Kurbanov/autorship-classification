@@ -15,7 +15,7 @@ class FeatureLevel(Enum):
 
 
 class Feature:
-    def __init__(self, name, feature_level, extract, combine=None):
+    def __init__(self, name, feature_level, extract, combine):
         self.name = name
         self.feature_level = feature_level
         self.extract = extract
@@ -39,8 +39,8 @@ class FeatureSet:
         return "{}".format([f.name for flist in self._features.values() for f in flist])
 
     def fit(self, X_train=None, y_train=None):
-        fwf = self._super_words_feature()
-        self._features[FeatureLevel.tile].append(fwf)
+        swf = self._super_words_feature()
+        self._features[FeatureLevel.tile].append(swf)
         self._n_features -= len(self._features[FeatureLevel.word]) - 1
 
     def transform(self, X_train):
@@ -48,7 +48,7 @@ class FeatureSet:
 
     def fit_transform(self, X_train, y_train=None):
         self.fit(X_train, y_train)
-        return self.transform(X_train, y_train)
+        return self.transform(X_train)
 
     def add_feature(self, feature):
         self._features[feature.feature_level].append(feature)
