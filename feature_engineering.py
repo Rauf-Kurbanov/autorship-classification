@@ -8,7 +8,7 @@ from sklearn.feature_extraction.text import HashingVectorizer, TfidfTransformer
 from sklearn.pipeline import make_pipeline
 from sklearn.feature_selection import SelectKBest, chi2
 
-from feature_encoder import feature, FeatureLevel, Feature, FeatureSet, word_feature
+from feature_set import feature, FeatureLevel, Feature, FeatureSet, word_feature
 
 
 def get_words(text):
@@ -58,6 +58,7 @@ class LettersFeature(Feature):
     def __init__(self, language):
         self._language = language
         self.feature_level = FeatureLevel.tile
+        self.name = "LettersFeature"
 
     def extract(self, tile):
         lang_to_alph = {"RUS": "абвгдеёжзийклмнопрстуфхцчшщъыьэюя",
@@ -76,6 +77,7 @@ class LettersFeature(Feature):
 class BagOfWords(FeatureSet):
     def __init__(self, select_chi2=1000):
         n_features = 2 ** 16
+        self._select_chi2 = select_chi2
         hasher = HashingVectorizer(stop_words='english',
                                    non_negative=True,
                                    n_features=n_features)
@@ -84,3 +86,6 @@ class BagOfWords(FeatureSet):
         self.fit = self._vectoriser.fit
         self.transform = self._vectoriser.transform
         self.fit_transform = self._vectoriser.fit_transform
+
+    def __str__(self):
+        return "BagOfWords_shci={}".format(self._select_chi2)

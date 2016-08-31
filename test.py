@@ -1,14 +1,8 @@
 import pickle
-import os
-import io
 from time import time
 import numpy as np
-import itertools as itt
-from random import shuffle
 
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.feature_extraction.text import HashingVectorizer, TfidfTransformer
-from sklearn.feature_selection import SelectKBest, chi2
 from sklearn.linear_model import PassiveAggressiveClassifier
 from sklearn.linear_model import Perceptron
 from sklearn.linear_model import RidgeClassifier
@@ -17,7 +11,7 @@ from sklearn.naive_bayes import BernoulliNB
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.neighbors import NearestCentroid
 
-from sklearn.pipeline import make_pipeline, Pipeline
+from sklearn.pipeline import Pipeline
 from sklearn import metrics
 
 from sklearn.svm import LinearSVC
@@ -27,6 +21,7 @@ from sklearn.utils.extmath import density
 
 import matplotlib.pyplot as plt
 
+from feature_engineering import BagOfWords
 from prep import deseralize_dataset
 from prep import seralize_dataset
 
@@ -48,9 +43,6 @@ def predict_and_score(X, y, data_name, clf):
     if hasattr(clf, 'coef_'):
         print("dimensionality: %d" % clf.coef_.shape[1])
         print("density: %f" % density(clf.coef_))
-        # print("Fitted parameters of model")
-        # print(clf.coef_)
-        print(np.histogram(clf.coef_))
 
     print("classification report for " + data_name + ":")
     print(metrics.classification_report(y, pred))
@@ -73,19 +65,27 @@ def benchmark(clf, X_train, y_train, X_test, y_test):
     train_score = predict_and_score(X_train, y_train, "train", clf)
     test_score = predict_and_score(X_test, y_test, "test", clf)
 
-    clf_descr = str(clf).split('(')[0]
+    return train_score, test_score
 
-    return clf_descr, train_score, test_score
+
+def train_models(X_train, y_train, X_test, y_test, models_with_names):
+    results = []
+
+    for clf, name in models_with_names:
+
+        print('=' * 80)
+        print(name)
+        results.append((name,) + benchmark(clf, X_train, y_train, X_test, y_test))
+
+    return results
 
 
 def train_all_models(X_train, y_train, X_test, y_test):
-    results = []
-
     piped = Pipeline([
         ('feature_selection', LinearSVC(penalty="l1", dual=False, tol=1e-3))
         , ('classification', LinearSVC())])
 
-    for clf, name in (
+    models_with_names = (
             (RidgeClassifier(tol=1e-2, solver="sag", alpha=10000), "Ridge Classifier")
             , (Perceptron(n_iter=50, penalty='l2', alpha=0.001), "Perceptron")
             , (PassiveAggressiveClassifier(n_iter=50, C=1e-8), "Passive-Aggressive")
@@ -93,25 +93,18 @@ def train_all_models(X_train, y_train, X_test, y_test):
             , (NearestCentroid(), "NearestCentroid (aka Rocchio classifier)")
             , (MultinomialNB(alpha=.01), "MultinomialNB")
             , (BernoulliNB(alpha=.01), "BernoulliNB")
-            # , ((xgb.XGBClassifier(max_depth=5, n_estimators=50, learning_rate=0.02)), "XGBoost")
-            # , (RandomForestClassifier(n_estimators=50, max_depth=3, max_features=20), "Random forest")
+            , ((xgb.XGBClassifier(max_depth=5, n_estimators=50, learning_rate=0.02)), "XGBoost")
+            , (RandomForestClassifier(n_estimators=50, max_depth=3, max_features=20), "Random forest")
             , (piped, "LinearSVC with L1-based feature selection")
             , (LinearSVC(penalty="l2", dual=False, tol=1e-3), "LinearSVC with l2 penalty")
-            , (SGDClassifier(alpha=.0001, n_iter=50, penalty="l2"), "")
-            , (LinearSVC(), "LinearSVC")
+            , (SGDClassifier(alpha=.0001, n_iter=50, penalty="l2"), "SGDClassifier")
+            , (LinearSVC(), "LinearSVC"))
 
-    ):
-
-        print('=' * 80)
-        print(name)
-        results.append(benchmark(clf, X_train, y_train, X_test, y_test))
-
-    return results
+    return train_models(X_train, y_train, X_test, y_test, models_with_names)
 
 
 def plot_results(results):
     indices = np.arange(len(results))
-
     results = [[x[i] for x in results] for i in range(3)]
 
     clf_names, train_score, test_score = results
@@ -139,15 +132,14 @@ def main():
     words_per_tile = 100
     vectorised = True
     force = False
-    shrink_train = 2
-    shrink_test = 3
+    shrink_train = 10
+    shrink_test = 10
 
     suffix = "{}_nf={}_wpt={}_vec={}_shTr={}_shTst={}".format(aut_pair, nfeatures, words_per_tile, vectorised,
                                                               shrink_train, shrink_test)
     seralize_dataset(data_dir, aut_pair, nfeatures, suffix=suffix, words_per_tile=words_per_tile,
-                     vectorised=vectorised, force=force, shrink_train=shrink_train, shrink_test=shrink_test)
+                     vectoriser=BagOfWords(), force=force, shrink_train=shrink_train, shrink_test=shrink_test)
     X_train, y_train, X_test, y_test = deseralize_dataset(suffix)
-
 
     dlen = X_train.shape[0]
     X_train, y_train = X_train[:dlen, :], y_train[:dlen]

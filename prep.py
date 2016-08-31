@@ -7,8 +7,6 @@ import pickle
 from time import time
 from random import shuffle
 
-from feature_engineering import bag_of_words, BagOfWords
-
 
 def build_tiles(text, nwords):
     ll = (s.strip().split() for s in text.splitlines())
@@ -58,9 +56,12 @@ def break_on_tiles(class1file, class2file, words_per_tile, shrink=1):
     return tiles, labels
 
 
-def seralize_dataset(data_dir, aut_pair, nfeatures, suffix, vectorised=True, words_per_tile=100, force=False,
+def seralize_dataset(data_dir, aut_pair, nfeatures, vectoriser=None, words_per_tile=100, force=False,
                      shrink_train=1, shrink_test=1):
 
+    suffix = "{}_nf={}_wpt={}_vec={}_shTr={}_shTst={}".format(aut_pair, nfeatures, words_per_tile, vectoriser,
+                                                              shrink_train, shrink_test)
+    suffix = str(suffix)
     if not force and all(map(os.path.isfile, ["serialized/X_train" + suffix + ".p",
                                               "serialized/y_train" + suffix + ".p",
                                               "serialized/X_test" + suffix + ".p",
@@ -77,16 +78,16 @@ def seralize_dataset(data_dir, aut_pair, nfeatures, suffix, vectorised=True, wor
     test_fn2 = os.path.join(data_dir, aut_pair, "class2_test/class2_test.txt")
     X_test, y_test = break_on_tiles(test_fn1, test_fn2, words_per_tile, shrink=shrink_test)
 
-    if vectorised:
-        bow = BagOfWords(nfeatures)
-        X_train = bow.fit_transform(X_train, y_train)
-        X_test = bow.transform(X_test)
+    if vectoriser is not None:
+        X_train = vectoriser.fit_transform(X_train, y_train)
+        X_test = vectoriser.transform(X_test)
 
     pickle.dump(X_train, open("serialized/X_train" + suffix + ".p", "wb"))
     pickle.dump(y_train, open("serialized/y_train" + suffix + ".p", "wb"))
     pickle.dump(X_test, open("serialized/X_test" + suffix + ".p", "wb"))
     pickle.dump(y_test, open("serialized/y_test" + suffix + ".p", "wb"))
 
+    return suffix
 
 def deseralize_dataset(suffix):
     t = time()

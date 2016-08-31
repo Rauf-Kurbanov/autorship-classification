@@ -25,15 +25,6 @@ class Feature:
         return self.extract(*args, **kwargs)
 
 
-def flatten(l):
-    for el in l:
-        if isinstance(el, collections.Iterable):
-            for sub in flatten(el):
-                yield sub
-        else:
-            yield el
-
-
 class FeatureSet:
     _n_features = 0
     _features = defaultdict(list)
@@ -44,16 +35,19 @@ class FeatureSet:
 
         self._n_features = len(features)
 
+    def __str__(self):
+        return "{}".format([f.name for flist in self._features.values() for f in flist])
+
     def fit(self, X_train=None, y_train=None):
         fwf = self._super_words_feature()
         self._features[FeatureLevel.tile].append(fwf)
         self._n_features -= len(self._features[FeatureLevel.word]) - 1
 
-    def transform(self, X_train=None, y_train=None):
+    def transform(self, X_train):
         return np.array([self._transform_tile(x) for x in X_train])
 
-    def fit_transform(self, X_train=None, y_train=None):
-        self.fit()
+    def fit_transform(self, X_train, y_train=None):
+        self.fit(X_train, y_train)
         return self.transform(X_train, y_train)
 
     def add_feature(self, feature):
@@ -61,7 +55,7 @@ class FeatureSet:
         self._n_features += 1
 
     def _transform_tile(self, tile):
-        return list(flatten(itt.chain(f.extract(tile) for f in self._features[FeatureLevel.tile])))
+        return list(self.flatten(itt.chain(f.extract(tile) for f in self._features[FeatureLevel.tile])))
 
     def _super_words_feature(self):
         word_features = self._features[FeatureLevel.word]
@@ -86,6 +80,38 @@ class FeatureSet:
 
         return Feature("super_from_word_feature", FeatureLevel.tile, extract)
 
+    @staticmethod
+    def flatten(l):
+        for el in l:
+            if isinstance(el, collections.Iterable):
+                for sub in FeatureSet.flatten(el):
+                    yield sub
+            else:
+                yield el
+
+
+class Encoder(FeatureSet):
+    def __init__(self, feature_sets):
+        self._feature_sets = feature_sets
+
+    def __str__(self):
+        return "Encoder_fss={}".format([fs.__str__() for fs in self._feature_sets])
+
+    def fit(self, X_train=None, y_train=None):
+        for fs in self._feature_sets:
+            fs.fit(X_train, y_train)
+
+    def transform(self, X_train=None, y_train=None):
+        transformed = [fs.transform(X_train) for fs in self._feature_sets]
+        return reduce(self.concat_encodings, transformed)
+
+    @staticmethod
+    def concat_encodings(x, y):
+        if isinstance(x, csr_matrix) or isinstance(y, csr_matrix):
+            return scipy.sparse.hstack((x, y))
+
+        return np.hstack((x, y))
+
 
 def feature(level, combine=None):
     def wrapper(func):
@@ -101,13 +127,6 @@ def word_feature(combine=None):
         return Feature(name, FeatureLevel.word, func, combine)
 
     return wrapper
-
-
-def concat_encodings(x, y):
-    if isinstance(x, csr_matrix) or isinstance(y, csr_matrix):
-        return scipy.sparse.hstack((x, y))
-
-    return np.hstack((x, y))
 
 
 def main():

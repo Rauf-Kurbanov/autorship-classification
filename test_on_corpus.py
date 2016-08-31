@@ -8,7 +8,6 @@ from clean_test import prepare_training_set , vectorise_dataset, \
 
 
 def results_for_autors(data_dir, aut_pair):
-    random.seed(42)
 
     train_fn1 = os.path.join(data_dir, aut_pair, "class1_training/class1_training.txt")
     train_fn2 = os.path.join(data_dir, aut_pair, "class2_training/class2_training.txt")
